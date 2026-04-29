@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -75,7 +75,7 @@
 
     <script>
       const urlParams = new URLSearchParams(location.search);
-      const configuredApi = urlParams.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "";
+      const configuredApi = urlParams.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "https://backendhng-production.up.railway.app";
       if (urlParams.get("api")) localStorage.setItem("INSIGHTA_API_URL", urlParams.get("api"));
       const API_BASE = configuredApi.replace(/\/$/, "");
       const state = { user:null, page:1, total_pages:1 };
