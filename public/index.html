@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -140,7 +140,7 @@
         <div id="session" class="status">Checking session...</div>
       </div>
       <div>
-        <a id="login" href="/auth/github/start?interface=web"><button class="primary">Sign in with GitHub</button></a>
+        <a id="login" href="#"><button class="primary">Sign in with GitHub</button></a>
         <button id="logout" class="hidden">Sign out</button>
       </div>
     </header>
@@ -189,7 +189,12 @@
     </main>
 
     <script>
+      const params = new URLSearchParams(location.search);
+      const configuredApi = params.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "";
+      if (params.get("api")) localStorage.setItem("INSIGHTA_API_URL", params.get("api"));
+      const API_BASE = configuredApi.replace(/\/$/, "");
       const state = { user: null, page: 1 };
+      document.getElementById("login").href = `${API_BASE}/auth/github/start?interface=web`;
       const csrf = () =>
         document.cookie
           .split("; ")
@@ -197,7 +202,7 @@
           ?.split("=")[1] || "";
 
       async function api(path, options = {}, retry = true) {
-        const response = await fetch(path, {
+        const response = await fetch(`${API_BASE}${path}`, {
           credentials: "include",
           headers: {
             Accept: "application/json",
@@ -207,7 +212,7 @@
           ...options,
         });
         if (response.status === 401 && retry) {
-          const refreshed = await fetch("/auth/refresh", { method: "POST", credentials: "include" }).catch(() => null);
+          const refreshed = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "include" }).catch(() => null);
           if (refreshed && refreshed.ok) return api(path, options, false);
         }
         if (!response.ok) {
@@ -291,15 +296,16 @@
       });
 
       document.getElementById("export").addEventListener("click", () => {
-        window.location.href = "/api/v1/profiles/export";
+        window.location.href = `${API_BASE}/api/v1/profiles/export`;
       });
 
       document.getElementById("logout").addEventListener("click", async () => {
-        await fetch("/auth/logout", { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf() } });
-        location.href = "/portal";
+        await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf() } });
+        location.href = "/";
       });
 
       loadSession();
     </script>
   </body>
 </html>
+
