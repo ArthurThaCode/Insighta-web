@@ -69,8 +69,11 @@
       </section>
 
       <section id="detail" class="panel view hidden"><h2>Profile detail</h2><pre id="detailJson"></pre></section>
-      <section id="search" class="panel view hidden"><h2>Search</h2><div class="toolbar"><input id="q" placeholder="young males from nigeria" /><button id="searchBtn">Search</button></div><div id="searchResults"></div></section>
-      <section id="account" class="panel view hidden"><h2>Account</h2><pre id="accountJson"></pre></section>
+      <section id="search" class="view hidden">
+        <div class="toolbar panel"><input id="q" placeholder="young males from nigeria" style="width:300px" /><button id="searchBtn" class="primary">Search</button></div>
+        <div class="panel"><table><thead><tr><th>Name</th><th>Gender</th><th>Age</th><th>Group</th><th>Country</th><th>Created</th><th></th></tr></thead><tbody id="searchRows"></tbody></table><div id="searchEmpty" class="empty">Type a query to search.</div></div>
+      </section>
+      <section id="account" class="panel view hidden"><h2>Account</h2><div id="accountDetails" style="font-size:16px;line-height:1.6"></div><br><pre id="accountJson" style="font-size:12px;color:gray"></pre></section>
     </main>
 
     <script>
@@ -109,8 +112,9 @@
           const data = await api("/api/profiles?limit=1").catch(async () => api("/api/v1/session/me"));
           const me = await api("/api/v1/session/me");
           state.user = me.data.user;
-          document.getElementById("session").textContent = `${state.user.login} (${state.user.role})`;
+          document.getElementById("session").textContent = `${state.user.login || state.user.username} (${state.user.role})`;
           document.getElementById("accountJson").textContent = JSON.stringify(state.user, null, 2);
+          document.getElementById("accountDetails").innerHTML = `<strong>Username:</strong> ${state.user.username}<br><strong>Role:</strong> ${state.user.role}<br><strong>GitHub ID:</strong> ${state.user.github_id}`;
           document.getElementById("metricRole").textContent = state.user.role;
           document.getElementById("login").classList.add("hidden"); document.getElementById("logout").classList.remove("hidden"); document.getElementById("app").classList.remove("hidden");
           if (state.user.role === "admin") document.getElementById("adminTools").classList.remove("hidden");
@@ -135,7 +139,27 @@
       document.getElementById("next").onclick = () => { if (state.page < state.total_pages) { state.page += 1; loadProfiles(); } };
       document.getElementById("create").onclick = async () => { const name = document.getElementById("newName").value.trim(); if (!name) return; await api("/api/v1/profiles", { method:"POST", body:JSON.stringify({ name }) }); document.getElementById("newName").value = ""; await loadProfiles(); };
       document.getElementById("rows").onclick = async (event) => { const id = event.target.dataset.viewId || event.target.dataset.delete; if (!id) return; if (event.target.dataset.delete) { await api(`/api/v1/profiles/${id}`, { method:"DELETE", body:"{}" }); await loadProfiles(); return; } const data = await api(`/api/v1/profiles/${id}`); document.getElementById("detailJson").textContent = JSON.stringify(data.data, null, 2); show("detail"); };
-      document.getElementById("searchBtn").onclick = async () => { const q = document.getElementById("q").value.trim(); if (!q) return; const data = await api(`/api/v1/profiles/search?q=${encodeURIComponent(q)}`); document.getElementById("searchResults").innerHTML = `<pre>${JSON.stringify(data.data, null, 2)}</pre>`; };
+      document.getElementById("searchBtn").onclick = async () => { 
+        const q = document.getElementById("q").value.trim(); 
+        if (!q) return; 
+        try {
+          document.getElementById("searchEmpty").textContent = "Searching...";
+          document.getElementById("searchEmpty").classList.remove("hidden");
+          document.getElementById("searchRows").innerHTML = "";
+          const data = await api(`/api/v1/profiles/search?q=${encodeURIComponent(q)}`); 
+          document.getElementById("searchEmpty").classList.toggle("hidden", data.data.length > 0);
+          document.getElementById("searchEmpty").textContent = data.data.length === 0 ? "No profiles found." : "";
+          const tbody = document.getElementById("searchRows");
+          for (const row of data.data) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td><button data-view-id="${row.id}">${row.name}</button></td><td>${row.gender}</td><td>${row.age}</td><td>${row.age_group}</td><td>${row.country_id || ""}</td><td>${new Date(row.created_at).toLocaleDateString()}</td><td></td>`;
+            tbody.appendChild(tr);
+          }
+        } catch (e) {
+          document.getElementById("searchEmpty").textContent = `Error: ${e.message}`;
+          document.getElementById("searchEmpty").classList.remove("hidden");
+        }
+      };
       document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
       document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":csrf() } }); location.href = "/"; };
       loadSession();
