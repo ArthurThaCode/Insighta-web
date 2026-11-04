@@ -16,6 +16,18 @@ The portal only accepts `https:` URLs, plus `http://localhost` for development. 
 
 The session lives in HTTP-only cookies set by the backend. The portal reads the CSRF token from `GET /api/v1/session/me` (or from `POST /auth/refresh`), keeps it in memory, and sends it in `X-CSRF-Token` on requests that change data. API data is rendered with `textContent`, never as HTML.
 
+## Tests
+
+Requires Node.js 22.
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
+The Playwright tests load the real page against a simulated backend. They cover XSS, CSRF, CSV export errors, and the `api` parameter.
+
 ## Backend requirements
 
 The backend must set these production variables:
