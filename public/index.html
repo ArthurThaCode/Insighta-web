@@ -111,7 +111,6 @@
       }
       async function loadSession() {
         try {
-          const data = await api("/api/profiles?limit=1").catch(async () => api("/api/v1/session/me"));
           const me = await api("/api/v1/session/me");
           state.user = me.data.user;
           state.csrfToken = me.data.csrf_token || "";
