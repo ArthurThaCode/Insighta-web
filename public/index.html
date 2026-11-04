@@ -32,7 +32,7 @@
   </head>
   <body>
     <header>
-      <div><h1>Insighta Labs</h1><div id="session" class="status">Checking session...</div></div>
+      <div><h1>Insighta Labs</h1><div id="session" class="status">Checking session...</div><div id="apiBase" class="status"></div></div>
       <div><a id="login" href="#"><button class="primary">Continue with GitHub</button></a><button id="logout" class="hidden">Sign out</button></div>
     </header>
 
@@ -78,11 +78,22 @@
 
     <script>
       const urlParams = new URLSearchParams(location.search);
-      const configuredApi = urlParams.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "https://backendhng-production.up.railway.app";
-      if (urlParams.get("api")) localStorage.setItem("INSIGHTA_API_URL", urlParams.get("api"));
+      const isAllowedApi = (value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" || (url.protocol === "http:" && url.hostname === "localhost");
+        } catch {
+          return false;
+        }
+      };
+      const requestedApi = urlParams.get("api");
+      if (requestedApi && isAllowedApi(requestedApi)) localStorage.setItem("INSIGHTA_API_URL", requestedApi);
+      const storedApi = localStorage.getItem("INSIGHTA_API_URL");
+      const configuredApi = isAllowedApi(storedApi) ? storedApi : "https://backendhng-production.up.railway.app";
       const API_BASE = configuredApi.replace(/\/$/, "");
       const state = { user:null, page:1, total_pages:1, csrfToken:"" };
       document.getElementById("login").href = `${API_BASE}/auth/github`;
+      document.getElementById("apiBase").textContent = `Backend: ${API_BASE}${requestedApi && !isAllowedApi(requestedApi) ? " (ignored ?api= value: https or http://localhost only)" : ""}`;
 
       async function api(path, options = {}, retry = true) {
         const response = await fetch(`${API_BASE}${path}`, {
