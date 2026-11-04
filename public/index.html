@@ -81,19 +81,21 @@
       const configuredApi = urlParams.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "https://backendhng-production.up.railway.app";
       if (urlParams.get("api")) localStorage.setItem("INSIGHTA_API_URL", urlParams.get("api"));
       const API_BASE = configuredApi.replace(/\/$/, "");
-      const state = { user:null, page:1, total_pages:1 };
+      const state = { user:null, page:1, total_pages:1, csrfToken:"" };
       document.getElementById("login").href = `${API_BASE}/auth/github`;
-      const csrf = () => document.cookie.split("; ").find((part) => part.startsWith("insighta_csrf="))?.split("=")[1] || "";
 
       async function api(path, options = {}, retry = true) {
         const response = await fetch(`${API_BASE}${path}`, {
           credentials:"include",
-          headers:{ Accept:"application/json", "X-API-Version":"1", ...(options.body ? { "Content-Type":"application/json", "X-CSRF-Token":csrf() } : {}), ...(options.headers || {}) },
+          headers:{ Accept:"application/json", "X-API-Version":"1", ...(options.body ? { "Content-Type":"application/json", "X-CSRF-Token":state.csrfToken } : {}), ...(options.headers || {}) },
           ...options,
         });
         if (response.status === 401 && retry) {
           const refreshed = await fetch(`${API_BASE}/auth/refresh`, { method:"POST", credentials:"include" }).catch(() => null);
-          if (refreshed && refreshed.ok) return api(path, options, false);
+          if (refreshed && refreshed.ok) {
+            state.csrfToken = (await refreshed.json()).csrf_token || "";
+            return api(path, options, false);
+          }
         }
         if (!response.ok) throw new Error((await response.json().catch(() => ({ message:"Request failed" }))).message);
         if (response.status === 204) return null;
@@ -112,6 +114,7 @@
           const data = await api("/api/profiles?limit=1").catch(async () => api("/api/v1/session/me"));
           const me = await api("/api/v1/session/me");
           state.user = me.data.user;
+          state.csrfToken = me.data.csrf_token || "";
           document.getElementById("session").textContent = `${state.user.login || state.user.username} (${state.user.role})`;
           document.getElementById("accountJson").textContent = JSON.stringify(state.user, null, 2);
           document.getElementById("accountDetails").innerHTML = `<strong>Username:</strong> ${state.user.username}<br><strong>Role:</strong> ${state.user.role}<br><strong>GitHub ID:</strong> ${state.user.github_id}`;
@@ -161,7 +164,7 @@
         }
       };
       document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
-      document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":csrf() } }); location.href = "/"; };
+      document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":state.csrfToken } }); location.href = "/"; };
       loadSession();
     </script>
   </body>
