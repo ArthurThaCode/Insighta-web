@@ -172,7 +172,7 @@
           document.getElementById("searchEmpty").classList.remove("hidden");
         }
       };
-      document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
+      document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); if (!response.ok) { const failure = await response.json().catch(() => ({ message:"Request failed" })); document.getElementById("meta").textContent = `Export failed: ${failure.message}`; return; } const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
       document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":state.csrfToken } }); location.href = "/"; };
       loadSession();
     </script>
