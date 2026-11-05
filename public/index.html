@@ -32,7 +32,7 @@
   </head>
   <body>
     <header>
-      <div><h1>Insighta Labs</h1><div id="session" class="status">Checking session...</div></div>
+      <div><h1>Insighta Labs</h1><div id="session" class="status">Checking session...</div><div id="apiBase" class="status"></div></div>
       <div><a id="login" href="#"><button class="primary">Continue with GitHub</button></a><button id="logout" class="hidden">Sign out</button></div>
     </header>
 
@@ -78,22 +78,35 @@
 
     <script>
       const urlParams = new URLSearchParams(location.search);
-      const configuredApi = urlParams.get("api") || localStorage.getItem("INSIGHTA_API_URL") || "https://backendhng-production.up.railway.app";
-      if (urlParams.get("api")) localStorage.setItem("INSIGHTA_API_URL", urlParams.get("api"));
+      const isAllowedApi = (value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" || (url.protocol === "http:" && url.hostname === "localhost");
+        } catch {
+          return false;
+        }
+      };
+      const requestedApi = urlParams.get("api");
+      if (requestedApi && isAllowedApi(requestedApi)) localStorage.setItem("INSIGHTA_API_URL", requestedApi);
+      const storedApi = localStorage.getItem("INSIGHTA_API_URL");
+      const configuredApi = isAllowedApi(storedApi) ? storedApi : "https://backendhng-production.up.railway.app";
       const API_BASE = configuredApi.replace(/\/$/, "");
-      const state = { user:null, page:1, total_pages:1 };
+      const state = { user:null, page:1, total_pages:1, csrfToken:"" };
       document.getElementById("login").href = `${API_BASE}/auth/github`;
-      const csrf = () => document.cookie.split("; ").find((part) => part.startsWith("insighta_csrf="))?.split("=")[1] || "";
+      document.getElementById("apiBase").textContent = `Backend: ${API_BASE}${requestedApi && !isAllowedApi(requestedApi) ? " (ignored ?api= value: https or http://localhost only)" : ""}`;
 
       async function api(path, options = {}, retry = true) {
         const response = await fetch(`${API_BASE}${path}`, {
           credentials:"include",
-          headers:{ Accept:"application/json", "X-API-Version":"1", ...(options.body ? { "Content-Type":"application/json", "X-CSRF-Token":csrf() } : {}), ...(options.headers || {}) },
+          headers:{ Accept:"application/json", "X-API-Version":"1", ...(options.body ? { "Content-Type":"application/json", "X-CSRF-Token":state.csrfToken } : {}), ...(options.headers || {}) },
           ...options,
         });
         if (response.status === 401 && retry) {
           const refreshed = await fetch(`${API_BASE}/auth/refresh`, { method:"POST", credentials:"include" }).catch(() => null);
-          if (refreshed && refreshed.ok) return api(path, options, false);
+          if (refreshed && refreshed.ok) {
+            state.csrfToken = (await refreshed.json()).csrf_token || "";
+            return api(path, options, false);
+          }
         }
         if (!response.ok) throw new Error((await response.json().catch(() => ({ message:"Request failed" }))).message);
         if (response.status === 204) return null;
@@ -109,12 +122,12 @@
       }
       async function loadSession() {
         try {
-          const data = await api("/api/profiles?limit=1").catch(async () => api("/api/v1/session/me"));
           const me = await api("/api/v1/session/me");
           state.user = me.data.user;
+          state.csrfToken = me.data.csrf_token || "";
           document.getElementById("session").textContent = `${state.user.login || state.user.username} (${state.user.role})`;
           document.getElementById("accountJson").textContent = JSON.stringify(state.user, null, 2);
-          document.getElementById("accountDetails").innerHTML = `<strong>Username:</strong> ${state.user.username}<br><strong>Role:</strong> ${state.user.role}<br><strong>GitHub ID:</strong> ${state.user.github_id}`;
+          renderAccount(state.user);
           document.getElementById("metricRole").textContent = state.user.role;
           document.getElementById("login").classList.add("hidden"); document.getElementById("logout").classList.remove("hidden"); document.getElementById("app").classList.remove("hidden");
           if (state.user.role === "admin") document.getElementById("adminTools").classList.remove("hidden");
@@ -125,13 +138,27 @@
         const data = await api(`/api/v1/profiles?${paramsFromFilters().toString()}`);
         state.total_pages = data.total_pages || 1; renderRows(data.data); document.getElementById("metricTotal").textContent = data.total; document.getElementById("metricLimit").textContent = data.limit; document.getElementById("meta").textContent = `Page ${data.page} of ${Math.max(data.total_pages, 1)} - ${data.total} total`;
       }
-      function renderRows(rows) {
-        const tbody = document.getElementById("rows"); tbody.innerHTML = ""; document.getElementById("empty").classList.toggle("hidden", rows.length > 0);
-        for (const row of rows) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td><button data-view-id="${row.id}">${row.name}</button></td><td>${row.gender}</td><td>${row.age}</td><td>${row.age_group}</td><td>${row.country_id || ""}</td><td>${new Date(row.created_at).toLocaleString()}</td><td>${state.user.role === "admin" ? `<button class="danger" data-delete="${row.id}">Delete</button>` : ""}</td>`;
-          tbody.appendChild(tr);
+      function renderAccount(user) {
+        const details = document.getElementById("accountDetails"); details.replaceChildren();
+        for (const [label, value] of [["Username", user.username], ["Role", user.role], ["GitHub ID", user.github_id]]) {
+          const strong = document.createElement("strong"); strong.textContent = `${label}: `;
+          const line = document.createElement("div"); line.append(strong, String(value));
+          details.appendChild(line);
         }
+      }
+      function createProfileRow(row, date, canDelete) {
+        const tr = document.createElement("tr");
+        const addCell = () => tr.appendChild(document.createElement("td"));
+        const open = document.createElement("button"); open.dataset.viewId = row.id; open.textContent = row.name;
+        addCell().appendChild(open);
+        for (const value of [row.gender, row.age, row.age_group, row.country_id || "", date]) addCell().textContent = value;
+        const actions = addCell();
+        if (canDelete) { const remove = document.createElement("button"); remove.className = "danger"; remove.dataset.delete = row.id; remove.textContent = "Delete"; actions.appendChild(remove); }
+        return tr;
+      }
+      function renderRows(rows) {
+        const tbody = document.getElementById("rows"); tbody.replaceChildren(); document.getElementById("empty").classList.toggle("hidden", rows.length > 0);
+        for (const row of rows) tbody.appendChild(createProfileRow(row, new Date(row.created_at).toLocaleString(), state.user.role === "admin"));
       }
       document.querySelector("nav").addEventListener("click", (event) => { if (event.target.dataset.view) show(event.target.dataset.view); });
       document.getElementById("applyFilters").onclick = () => { state.page = 1; loadProfiles().catch((e) => alert(e.message)); };
@@ -145,23 +172,19 @@
         try {
           document.getElementById("searchEmpty").textContent = "Searching...";
           document.getElementById("searchEmpty").classList.remove("hidden");
-          document.getElementById("searchRows").innerHTML = "";
+          document.getElementById("searchRows").replaceChildren();
           const data = await api(`/api/v1/profiles/search?q=${encodeURIComponent(q)}`); 
           document.getElementById("searchEmpty").classList.toggle("hidden", data.data.length > 0);
           document.getElementById("searchEmpty").textContent = data.data.length === 0 ? "No profiles found." : "";
           const tbody = document.getElementById("searchRows");
-          for (const row of data.data) {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `<td><button data-view-id="${row.id}">${row.name}</button></td><td>${row.gender}</td><td>${row.age}</td><td>${row.age_group}</td><td>${row.country_id || ""}</td><td>${new Date(row.created_at).toLocaleDateString()}</td><td></td>`;
-            tbody.appendChild(tr);
-          }
+          for (const row of data.data) tbody.appendChild(createProfileRow(row, new Date(row.created_at).toLocaleDateString(), false));
         } catch (e) {
           document.getElementById("searchEmpty").textContent = `Error: ${e.message}`;
           document.getElementById("searchEmpty").classList.remove("hidden");
         }
       };
-      document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
-      document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":csrf() } }); location.href = "/"; };
+      document.getElementById("export").onclick = async () => { const response = await fetch(`${API_BASE}/api/v1/profiles/export?${paramsFromFilters().toString()}&format=csv`, { credentials:"include", headers:{ "X-API-Version":"1" } }); if (!response.ok) { const failure = await response.json().catch(() => ({ message:"Request failed" })); document.getElementById("meta").textContent = `Export failed: ${failure.message}`; return; } const blob = await response.blob(); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `profiles_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; link.click(); URL.revokeObjectURL(link.href); };
+      document.getElementById("logout").onclick = async () => { await fetch(`${API_BASE}/auth/logout`, { method:"POST", credentials:"include", headers:{ "X-CSRF-Token":state.csrfToken } }); location.href = "/"; };
       loadSession();
     </script>
   </body>
